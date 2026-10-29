@@ -131,10 +131,10 @@ internal sealed class MicWindow : Form
         bool ready = value == "ready", busy = value == "connecting" || value == "stopping", error = value == "error";
         badge.Fill = ready ? Color.FromArgb(225, 242, 233) : error ? Color.FromArgb(253, 233, 228) : Color.FromArgb(233, 237, 232);
         badgeText.ForeColor = ready ? Color.FromArgb(38, 117, 80) : error ? Color.FromArgb(163, 76, 58) : Muted;
-        badgeText.Text = "● " + (ready ? "已连接" : error ? "连接失败" : value == "connecting" ? "连接中" : value == "stopping" ? "正在停止" : "未连接");
-        action.Text = ready ? "暂停连接" : value == "connecting" ? "正在连接…" : value == "stopping" ? "正在停止…" : error ? "重新连接" : "开启麦克风";
+        badgeText.Text = "● " + (ready ? "已连接" : error ? "连接失败" : value == "waiting" ? "等待鼠标" : value == "connecting" ? "连接中" : value == "stopping" ? "正在停止" : "未连接");
+        action.Text = ready || value == "waiting" ? "暂停连接" : value == "connecting" ? "正在连接…" : value == "stopping" ? "正在停止…" : error ? "重新连接" : "开启麦克风";
         action.Enabled = !busy; link.Enabled = worker == null;
-        description.Text = error ? "请检查鼠标蓝牙连接和虚拟麦克风" : link.Checked ? "网易麦克风请选择 CABLE Output" : "语音软件的麦克风请选择 CABLE Output";
+        description.Text = value == "waiting" ? "鼠标唤醒后会自动连接" : error ? "请检查鼠标蓝牙连接和虚拟麦克风" : link.Checked ? "网易麦克风请选择 CABLE Output" : "语音软件的麦克风请选择 CABLE Output";
         footer.Text = link.Checked ? "保持网易在后台运行" : "按住鼠标语音键传输声音";
         badge.Invalidate();
     }
@@ -149,7 +149,7 @@ internal sealed class MicWindow : Form
             if (!File.Exists(script)) throw new FileNotFoundException();
             var info = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell\\v1.0\\powershell.exe"));
             info.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script +
-                "\" -RunBridge -KeyMode hold -KeyId 0 -DurationSeconds 86400 -OutputDeviceName \"CABLE Input\" -StopFile \"" + stopFile +
+                "\" -RunBridge -KeyMode hold -KeyId 0 -DurationSeconds 0 -OutputDeviceName \"CABLE Input\" -StopFile \"" + stopFile +
                 "\" -StatusFile \"" + stopFile + ".status\"" + (link.Checked ? " -TargetHotkeyMode toggle" : "");
             info.UseShellExecute = false; info.CreateNoWindow = true; info.WindowStyle = ProcessWindowStyle.Hidden;
             info.RedirectStandardOutput = true; info.RedirectStandardError = true;
@@ -177,9 +177,12 @@ internal sealed class MicWindow : Form
             worker.Dispose(); worker = null; CleanStatus(); SetState(failed ? "error" : "idle");
             if (closing) Close();
         }
-        else if (!stopping && state == "connecting")
+        else if (!stopping)
         {
-            try { if (File.ReadAllText(stopFile + ".status") == "ready") SetState("ready"); } catch (IOException) { }
+            try {
+                string next = File.ReadAllText(stopFile + ".status");
+                if (next != state && (next == "ready" || next == "waiting" || next == "connecting")) SetState(next);
+            } catch (IOException) { }
         }
     }
 

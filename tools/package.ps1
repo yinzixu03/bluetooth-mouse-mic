@@ -19,7 +19,7 @@ $sources = [ordered]@{}
 foreach ($name in @('README.md','LICENSE','.gitignore')) { $sources[$name] = Join-Path $root $name }
 foreach ($folder in @('src','tools','tests','licenses')) {
     foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $root $folder) -File -Recurse | Sort-Object FullName)) {
-        if ($file.Extension -in @('.cs','.c','.h','.ps1','.md','.json') -or $file.Name -in @('COPYING','AUTHORS')) {
+        if ($file.Extension -in @('.cs','.c','.h','.ps1','.md','.json','.ico') -or $file.Name -in @('COPYING','AUTHORS')) {
             $sources[$file.FullName.Substring($root.Length+1).Replace('\','/')] = $file.FullName
         }
     }

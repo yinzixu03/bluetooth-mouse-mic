@@ -71,6 +71,7 @@ function Wait-WinRt($Operation, $ResultType) {
     return $task.Result
 }
 
+function Invoke-M110Session {
 $device = $null; $service = $null; $characteristic = $null; $session = $null
 $observer = New-Object GattNotificationObserver
 $hotkeyLink = New-Object M110HotkeyLink($TargetHotkeyMode)
@@ -121,6 +122,7 @@ try {
         Write-Output 'Connecting: completing the local mouse handshake'
         $null = $observer.InitializeSessionAsync($tx).GetAwaiter().GetResult()
         Write-Output 'Connection handshake verified'
+        $observer.AttachDevice($device)
     }
     if ($TestAudioStream) {
         $recordingAttempted = $true
@@ -130,11 +132,13 @@ try {
     }
     if ($RunBridge) {
         Write-Output ('BRIDGE: key_mode=' + $KeyMode + '; key_id=' + $KeyId + '; target_hotkey=' + $TargetHotkeyMode)
+        $script:failures = 0
         if ($StatusFile) { [IO.File]::WriteAllText($StatusFile, 'ready') }
     }
-    $end = [DateTime]::UtcNow.AddSeconds($DurationSeconds); $count = 0
+    $end = if ($RunBridge) { $bridgeDeadline } else { [DateTime]::UtcNow.AddSeconds($DurationSeconds) }; $count = 0
     while ([DateTime]::UtcNow -lt $end) {
-        Start-Sleep -Milliseconds 200
+        if ($RunBridge -and -not $connectionWatcher.IsConnected) { throw 'Mouse disconnected.' }
+        $null = $observer.WaitForEvent(1000)
         if ($StopFile -and (Test-Path -LiteralPath $StopFile)) {
             Write-Output 'BRIDGE: stop requested'
             break
@@ -150,6 +154,10 @@ try {
         }
         foreach ($event in $observer.Drain()) {
             $count++
+            if ($event -eq 'connection=disconnected') {
+                # The UI's device watcher will restart the worker after wake.
+                throw 'Mouse disconnected; waiting for the next Bluetooth connection.'
+            }
             if ($RunBridge -and $event -match 'key=(\d+) state=(\d+)') {
                 $observedId = [int]$Matches[1]; $keyState = [int]$Matches[2]
                 $action = Get-M110KeyAction -ObservedId $observedId -State $keyState -Mode $KeyMode -TargetId $KeyId -Recording $recordingAttempted
@@ -175,9 +183,7 @@ try {
     Write-Output ('DONE: notifications=' + $count)
     if ($DecodeAudio) { Write-Output ('AUDIO: ' + $observer.AudioSummary()) }
 } catch {
-    if ($StatusFile) { try { [IO.File]::WriteAllText($StatusFile, 'error') } catch {} }
-    [Console]::Error.WriteLine('Notification probe failed: ' + $_.Exception.Message)
-    exit 1
+    throw
 } finally {
     if ($recordingAttempted -and $null -ne $tx) {
         try { Write-Output ('Cleanup audio stop: ' + (Wait-WinRt ($observer.StopAudio($tx)) $statusType)) }
@@ -191,5 +197,75 @@ try {
     if ($DecodeAudio) { try { $observer.CloseAudioDecoding() } catch {} }
     if ($null -ne $service) { $service.Dispose() }
     if ($null -ne $session) { $session.MaintainConnection = $false; $session.Dispose() }
-    if ($null -ne $device) { $device.Dispose() }
+    if ($null -ne $device) { try { $observer.DetachDevice($device) } catch {}; $device.Dispose() }
+    $observer.Dispose()
+}
+
+}
+
+function Set-BridgeStatus([string]$value) {
+    if ($StatusFile) { [IO.File]::WriteAllText($StatusFile, $value) }
+}
+function Test-BridgeStop {
+    return (($StopFile -and (Test-Path -LiteralPath $StopFile)) -or [DateTime]::UtcNow -ge $bridgeDeadline)
+}
+function Wait-BridgeChange([int]$milliseconds) {
+    $until = [DateTime]::UtcNow.AddMilliseconds($milliseconds)
+    do {
+        if (Test-BridgeStop) { return }
+        $remaining = [Math]::Max(1,[Math]::Min(1000,($until - [DateTime]::UtcNow).TotalMilliseconds))
+        if ($connectionWatcher.WaitForChange([int]$remaining)) { return }
+    } while ([DateTime]::UtcNow -lt $until)
+}
+
+if (-not $RunBridge) {
+    try { Invoke-M110Session } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+    return
+}
+$bridgeDeadline = if ($DurationSeconds -le 0) { [DateTime]::MaxValue } else { [DateTime]::UtcNow.AddSeconds($DurationSeconds) }
+$connectionWatcher = $null
+try {
+    $connectionWatcher = New-Object M110ConnectionWatcher
+    $connectionWatcher.Start()
+    $failures = 0
+    $connectionEpoch = -1
+    Set-BridgeStatus 'waiting'
+    while (-not (Test-BridgeStop)) {
+        if ($connectionWatcher.ConnectionEpoch -ne $connectionEpoch) {
+            $connectionEpoch = $connectionWatcher.ConnectionEpoch
+            $failures = 0
+        }
+        if (-not $connectionWatcher.IsConnected) {
+            $failures = 0
+            Set-BridgeStatus 'waiting'
+            Wait-BridgeChange 1000
+            continue
+        }
+        if ($failures -ge 4) {
+            # After three bounded retries, wait for a disconnect/reconnect event.
+            Set-BridgeStatus 'waiting'
+            Wait-BridgeChange 1000
+            continue
+        }
+        Set-BridgeStatus 'connecting'
+        while ($connectionWatcher.WaitForChange(0)) { }
+        try {
+            Invoke-M110Session
+            $failures = 0
+        } catch {
+            [Console]::Error.WriteLine('Connection ended: ' + $_.Exception.Message)
+            $failures++
+        }
+        if (Test-BridgeStop) { break }
+        Set-BridgeStatus 'waiting'
+        if ($connectionWatcher.IsConnected -and $failures -gt 0 -and $failures -lt 4) {
+            Wait-BridgeChange (@(1000,3000,8000)[$failures-1])
+        }
+    }
+} catch {
+    Set-BridgeStatus 'error'
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+} finally {
+    if ($null -ne $connectionWatcher) { $connectionWatcher.Dispose() }
 }

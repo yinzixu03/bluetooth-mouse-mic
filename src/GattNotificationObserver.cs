@@ -5,15 +5,17 @@ using System.Runtime.InteropServices;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
+using System.Threading;
 using Buffer = System.Buffer;
 using Windows.Foundation;
+using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Storage.Streams;
 
 // WinRT callbacks run on a background thread; they must not call PowerShell.
 // By default the observer records only notification time and length. Optional
 // diagnostic modes expose headers, key-event metadata, or the version response.
-public sealed class GattNotificationObserver
+public sealed class GattNotificationObserver : IDisposable
 {
     private readonly ConcurrentQueue<string> events = new ConcurrentQueue<string>();
     private readonly ConcurrentQueue<byte[]> controlReplies = new ConcurrentQueue<byte[]>();
@@ -27,6 +29,7 @@ public sealed class GattNotificationObserver
     public bool DecodeAudioHeaders { get; set; }
     public bool OutputSilence { get; set; }
     private readonly object codecLock = new object();
+    private readonly AutoResetEvent notificationReady = new AutoResetEvent(false);
     private PcmCodec codec;
     private long decodedFrames, decodedSamples;
     private int maxAmplitude;
@@ -64,6 +67,17 @@ public sealed class GattNotificationObserver
     {
         characteristic.ValueChanged += OnValueChanged;
     }
+
+    public bool WaitForEvent(int timeoutMilliseconds) { return notificationReady.WaitOne(timeoutMilliseconds); }
+    public void AttachDevice(BluetoothLEDevice device) { device.ConnectionStatusChanged += ConnectionChanged; }
+    public void DetachDevice(BluetoothLEDevice device) { device.ConnectionStatusChanged -= ConnectionChanged; }
+    private void ConnectionChanged(BluetoothLEDevice device, object args)
+    {
+        if (device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+        { events.Enqueue("connection=disconnected"); SignalNotification(); }
+    }
+    private void SignalNotification() { try { notificationReady.Set(); } catch (ObjectDisposedException) { } }
+    public void Dispose() { CloseAudioDecoding(); notificationReady.Dispose(); }
 
     public void Detach(GattCharacteristic characteristic)
     {
@@ -141,6 +155,7 @@ public sealed class GattNotificationObserver
             }
         }
         events.Enqueue(value);
+        SignalNotification();
     }
 
     public string[] Drain()
