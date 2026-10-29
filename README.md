@@ -38,7 +38,7 @@ M110 每帧音频长 20 ms，解码后得到 320 个采样，格式为 16 kHz、
 
 ### 移植到其他鼠标
 
-按下面的顺序逐段接通。先按“构建”一节编译项目；修改 `src/` 后重新构建，运行生成的 `support/` 中的后台脚本。
+按下面的顺序逐段接通。先按下方“从源码生成程序”的步骤编译项目；修改 `src/` 后重新编译，运行生成的 `support/` 中的后台脚本。
 
 #### 1. 找到蓝牙数据通道
 
@@ -104,9 +104,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\support\monitor_key_events
 
 完成后记录鼠标型号、固件、连接方式、UUID、按键格式、编码参数，以及冷启动和连续录音的测试结果。提交适配代码时附上这些信息，后续使用同款鼠标的人就能照着复现。
 
-## 构建
+### 从源码生成程序
 
-构建环境：64 位 Windows、Windows PowerShell 5.1、系统 .NET Framework 和 [Zig 0.16.0](https://ziglang.org/download/)。
+这一步将界面、蓝牙桥接和解码器源码编译成可运行的 `M110Mic.exe`、`GattNotificationObserver.dll` 和 `m110_g7221.dll`。修改源码后，重新编译即可生成更新后的程序。
+
+编译环境：64 位 Windows、Windows PowerShell 5.1、系统 .NET Framework 和 [Zig 0.16.0](https://ziglang.org/download/)。
 
 在源码目录运行，将 Zig 路径替换为本机位置：
 
