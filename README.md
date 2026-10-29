@@ -48,7 +48,7 @@ M110 每帧音频长 20 ms，解码后得到 320 个采样，格式为 16 kHz、
 
 配对目标鼠标，用 BLE 调试工具枚举它的服务和特征，记录服务 UUID、可写特征 UUID，以及支持 Notify 的特征 UUID。可从微软的 [Bluetooth LE Explorer](https://github.com/microsoft/BluetoothLEExplorer) 入手，订阅通知后观察按键和采音时的数据变化。
 
-在 `src/monitor_key_events.ps1` 中调整设备名称筛选条件 `^M110`，并替换三处 UUID。当前 M110 使用以下通道：
+在 `src/monitor_key_events.ps1` 中调整设备名称筛选条件 `^M110`，同时修改 `src/M110ConnectionWatcher.cs` 中的设备名称匹配前缀，并替换脚本中的三处 UUID。当前 M110 使用以下通道：
 
 | 用途 | UUID |
 | --- | --- |
