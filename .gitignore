@@ -1,0 +1,33 @@
+# Build products go in GitHub Releases; source stays in the repository.
+*.dll
+*.exe
+*.pdb
+*.lib
+*.obj
+.build/
+dist/
+support/
+*.zip
+
+# Local data and credentials
+*.local.*
+*.log
+*.wav
+*.pcm
+*.mp3
+*.m4a
+*.flac
+*.db
+*.sqlite*
+.env
+.env.*
+*.pem
+*.key
+__pycache__/
+logs/
+
+# Never redistribute vendor software or experimental drivers here.
+mspeech_pcm.dll
+*.sys
+*.cat
+VBCABLE/
