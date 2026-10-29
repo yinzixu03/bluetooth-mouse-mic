@@ -1,0 +1,24 @@
+name: Publish packaged release
+on:
+  push:
+    branches: [release/v0.1.1]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify packages and publish v0.1.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          cd release-assets
+          for name in m110-mic-source.zip m110-mic-windows-x64.zip SHA256SUMS RELEASE.md; do
+            gh api "repos/$GH_REPO/contents/release-assets/$name?ref=$GITHUB_SHA" --jq .content | base64 --decode > "$name"
+          done
+          sha256sum --check SHA256SUMS
+          gh release create v0.1.1 --repo "$GH_REPO" --target 789ea285c44064021fcbd5bb5e21d3dc68a5aaa1 --title "M110 Mic v0.1.1" --notes-file RELEASE.md m110-mic-windows-x64.zip m110-mic-source.zip
